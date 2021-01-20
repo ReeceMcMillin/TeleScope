@@ -7,19 +7,31 @@ import os
 from pathlib import Path
 import json
 from typing import List
-import logging
+import mass_data
 
-api_id = config.api_id
-api_hash = config.api_hash
 
-def log_chat(client, chat, allow_overwrite=False):
-    if not can_connect(client, chat):
-        print(f"Error: Could not connect to chat {chat}. Likely a private/banned server.")
+def log_channel(client, channel_id, allow_overwrite=False):
+    """Logs a Telegram channel to full-featured JSON.
+
+    Args:
+        client (TelegramClient): Instance of the active Telegram client.
+        channel_id (chat-like): Any chat-like identifier, preferably channel ID as integer.
+        allow_overwrite (bool, optional): Whether or not a given file should be overwritten. Defaults to False.
+
+    Returns:
+        bool: Success status for write operation.
+    """
+
+    if not os.path.isdir("logs/"):
+        os.mkdir("logs/")
+
+    if not can_connect(client, channel_id):
+        print(f"Error: Could not connect to chat {channel_id}. Likely a private/banned server.")
         return False
 
     with client:
-        channel_id = resolve_id(client.get_peer_id(chat))[0]
-        channel_name = client.get_entity(chat).title
+        channel_id = resolve_id(client.get_peer_id(channel_id))[0]
+        channel_name = client.get_entity(channel_id).title
 
         if allow_overwrite == False:
             if os.path.exists(f"logs/{channel_id}.json") and Path(f'logs/{channel_id}.json').stat().st_size > 1000:
@@ -29,7 +41,7 @@ def log_chat(client, chat, allow_overwrite=False):
         with open(f"logs/{channel_id}.json", 'w') as f:
             print(f"Logging chat for {channel_name} at logs/{channel_id}.json...")
             f.write('[\n')
-            for msg in client.iter_messages(chat):
+            for msg in client.iter_messages(channel_id):
                 f.write(msg.to_json())
                 f.write(",\n")
 
@@ -79,17 +91,17 @@ def all_forward_sources_from_file(channel_id):
 
     return forward_sources
 
-def get_chat_name(client, chat):
-    if not can_connect(client, chat):
+def get_chat_name(client, channel_id):
+    if not can_connect(client, channel_id):
         return "_inaccessible: private or banned"
     with client:
-        return client.get_entity(chat).title
+        return client.get_entity(channel_id).title
 
-def get_chat_id(client, chat):
-    return resolve_id(client.get_peer_id(chat))[0]
+def get_chat_id(client, channel_identifier):
+    return resolve_id(client.get_peer_id(channel_identifier))[0]
 
-def can_connect(client, chat):
-    """Crude connectability test for a given server. Likely a significantly better way to accomplish.
+def can_connect(client, channel_id):
+    """Crude connectivity test for a given server. Likely a better way to accomplish.
 
     Args:
         client (TelegramClient): Instance of the active telegram client containing API access information.
@@ -100,7 +112,7 @@ def can_connect(client, chat):
     """
     try:
         with client:
-            if client.get_entity(chat):
+            if client.get_entity(channel_id):
                 return True
     except:
         return False
@@ -119,6 +131,8 @@ def counter_from_list_of_ids(client, id_list):
     """
     count = Counter()
 
+    id_list = list(set(id_list))        # pare id_list to unique values before iterating over them
+
     print(f"Checking {len(id_list)} from list..")
 
     with client:
@@ -134,7 +148,19 @@ def counter_from_list_of_ids(client, id_list):
     return count
 
 def write_all_sources_to_file(id_list, output_filename):
+    """Given a list of channel IDs, writes a Counter() to a text file.
+    Should likely be merged with counter_from_list_of_ids().
+
+    Args:
+        id_list (List[chat-like]): List of chat-like identifiers, preferably ID numbers.
+        output_filename (str): Output filename. Writes to pwd.
+
+    Returns:
+        bool: Success state of write operation.
+    """
     all_sources = Counter()
+
+    id_list = list(set(id_list))    # Ensure no duplicates are processed.
 
     for channel in id_list:
         try:
@@ -151,10 +177,11 @@ def write_all_sources_to_file(id_list, output_filename):
 
 if __name__ == "__main__":
 
-    client = TelegramClient('session_id', api_id, api_hash)
-    test_ids = config.test_ids      # Private list of Telegram channel IDs
+    # Example: log channels listed in config.test_ids to JSON and store sources of all forwarded posts in sources.txt.
 
-    for channel in test_ids:
-        log_chat(client, channel, allow_overwrite=True)
+    client = TelegramClient('session_id', config.api_id, config.api_hash)   # API ID/hash must be provided by end-user.
 
-    write_all_sources_to_file(config.test_ids, 'sources.txt')
+    for channel in config.test_ids:
+        log_channel(client, channel, allow_overwrite=False)
+
+    write_all_sources_to_file(config.test_ids, "sources.txt")
